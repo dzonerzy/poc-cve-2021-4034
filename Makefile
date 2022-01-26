@@ -1,0 +1,21 @@
+GO=$(shell which go)
+GOLDFLAGS = -ldflags="-w -s"
+GOCFLAGS = -buildmode=c-shared
+PAYLOAD_DIR = payload
+PAYLOAD = $(PAYLOAD_DIR)/payload.go
+EXPLOIT = exploit.go
+OUTPUT = exploit
+RELEASE_DIR = release
+
+all : exploit
+
+exploit:
+	mkdir -p $(RELEASE_DIR)
+	$(GO) build -o $(PAYLOAD_DIR)/payload.so $(GOCFLAGS) $(GOLDFLAGS) $(PAYLOAD)
+	$(GO) build -o $(RELEASE_DIR)/$(OUTPUT) $(EXPLOIT)
+	rm -f $(PAYLOAD_DIR)/payload.so $(PAYLOAD_DIR)/payload.h
+
+.PHONY: clean
+
+clean:
+	rm -rf $(RELEASE_DIR)
